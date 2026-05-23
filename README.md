@@ -6,6 +6,9 @@ Inspired by the famous **Timely** app digits, this clock doesn't just change num
 
 This clock is configured in **portrait mode** (standing up vertically: Hours at the top, Minutes in the middle, Seconds at the bottom) with high-contrast glowing neon colors and a completely dark top LED.
 
+<img width="415" height="925" alt="output" src="https://github.com/user-attachments/assets/686abdf3-b582-400b-8875-0269b27610ee" />
+
+
 ---
 
 ## 📸 How it Looks!
@@ -98,4 +101,5 @@ When the time ticks over (like `3` changing to `4`):
 ---
 
 ## 🌟 License & Credits
-Created with ❤️ by **Antigravity AI** and pair-programmed with you. Feel free to share this on GitHub, modify the colors, and show off your gorgeous new clock! 🚀
+Created with ❤️ by **Antigravity AI** and pair-programmed. 
+
