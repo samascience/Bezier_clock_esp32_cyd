@@ -221,13 +221,15 @@ WIFI_PASSWORD = \"$WIFI_PASS\"'''
 echo -e "${MAGENTA}================================================================${RESET}"
 echo -e "🎈 What would you like to do with your screen today?"
 echo -e "${MAGENTA}================================================================${RESET}"
-echo -e "  ${GREEN}1)${RESET} ${CYAN}Fast Install / Update${RESET} (Choose this if clock is already MicroPython)"
-echo -e "  ${GREEN}2)${RESET} ${YELLOW}Brand New Screen Install${RESET} (Choose this for new screens from the box!)"
-echo -e "  ${GREEN}3)${RESET} ${RED}Erase Board Completely${RESET} (Clear all memory)"
-echo -e "  ${GREEN}4)${RESET} ${BLUE}Reboot Screen${RESET} (Restart the clock)"
-echo -e "  ${GREEN}5)${RESET} Exit"
+echo -e "  ${GREEN}1)${RESET} ${CYAN}Fast Update (USB)${RESET}"
+echo -e "  ${GREEN}2)${RESET} ${YELLOW}Brand New Screen Install (USB)${RESET}"
+echo -e "  ${GREEN}3)${RESET} ${GREEN}WiFi Remote Update (Over-the-Air to IP Address! 📶)${RESET}"
+echo -e "  ${GREEN}4)${RESET} ${MAGENTA}Configure WiFi Remote Flashing on Board (Requires USB)${RESET}"
+echo -e "  ${GREEN}5)${RESET} ${RED}Erase Board Completely (USB)${RESET}"
+echo -e "  ${GREEN}6)${RESET} ${BLUE}Reboot Screen (USB)${RESET}"
+echo -e "  ${GREEN}7)${RESET} Exit"
 echo -e "${MAGENTA}================================================================${RESET}"
-read -p "Type your choice number (1-5) and press Enter: " CHOICE
+read -p "Type your choice number (1-7) and press Enter: " CHOICE
 
 # Helper to force-exit raw REPL developer mode and reboot
 reboot_board() {
@@ -249,7 +251,7 @@ except Exception:
 case $CHOICE in
     1)
         # ==========================================
-        # STANDARD FILE UPLOAD
+        # STANDARD FILE UPLOAD (USB)
         # ==========================================
         configure_timezones
         
@@ -292,7 +294,7 @@ case $CHOICE in
         
     2)
         # ==========================================
-        # FULL FLASH AND UPLOAD
+        # FULL FLASH AND UPLOAD (USB)
         # ==========================================
         configure_timezones
         
@@ -348,6 +350,94 @@ case $CHOICE in
         
     3)
         # ==========================================
+        # WIFI REMOTE OTA UPDATE
+        # ==========================================
+        configure_timezones
+        
+        echo -e "${MAGENTA}================================================================${RESET}"
+        echo -e "📡 WIFI REMOTE OTA FLASHING WIZARD"
+        echo -e "${MAGENTA}================================================================${RESET}"
+        read -p "📶 Enter your screen's IP address: " WR_IP
+        if [ -z "$WR_IP" ]; then
+            echo -e "${RED}❌ Error: IP address is required for remote flashing.${RESET}"
+            exit 1
+        fi
+        
+        read -p "🔑 Enter your WebREPL password [Default: 1234]: " WR_PASS
+        WR_PASS=${WR_PASS:-1234}
+        
+        echo ""
+        echo -e "${CYAN}🚀 Launching remote wireless flash...${RESET}"
+        python3 remote_flash.py "$WR_IP" "$WR_PASS" ili9341.py:ili9341.py xpt2046.py:xpt2046.py bezier_clock.py:main.py
+        
+        if [ $? -eq 0 ]; then
+            echo ""
+            echo -e "${GREEN}🎉 SUCCESS! Your portrait-mode clock has been updated remotely over WiFi! 📶${RESET}"
+        else
+            echo ""
+            echo -e "${RED}❌ Wireless flashing failed. Please double check IP, network, and password.${RESET}"
+        fi
+        ;;
+
+    4)
+        # ==========================================
+        # CONFIGURE WEBREPL ON BOARD VIA USB
+        # ==========================================
+        echo ""
+        echo -e "${MAGENTA}================================================================${RESET}"
+        echo -e "🔑 CONFIGURE WIFI REMOTE FLASHING (WEBREPL)"
+        echo -e "${MAGENTA}================================================================${RESET}"
+        echo -e "This will configure your screen to accept wireless updates over WiFi."
+        echo -e "It requires the screen to be plugged in via USB right now."
+        echo ""
+        
+        read -p "🔐 Set a password for remote flashing [Default: 1234]: " WR_PASS
+        WR_PASS=${WR_PASS:-1234}
+        
+        echo -e "${CYAN}🔨 Creating configuration helper...${RESET}"
+        cat <<EOF > setup_webrepl.py
+# Temporary file to configure WebREPL on target board
+with open('webrepl_cfg.py', 'w') as f:
+    f.write("PASS = '${WR_PASS}'\n")
+
+boot_content = ""
+try:
+    with open('boot.py', 'r') as f:
+        boot_content = f.read()
+except OSError:
+    pass
+
+if 'webrepl.start()' not in boot_content:
+    with open('boot.py', 'w') as f:
+        f.write(boot_content + "\nimport webrepl\nwebrepl.start()\n")
+EOF
+
+        echo -e "${CYAN}📤 Sending helper to target board...${RESET}"
+        python3 -m mpremote connect "$PORT" fs cp setup_webrepl.py :setup_webrepl.py
+        if [ $? -eq 0 ]; then
+            echo -e "${CYAN}⚙️ Running configuration helper on board...${RESET}"
+            python3 -m mpremote connect "$PORT" run :setup_webrepl.py
+            
+            echo -e "${CYAN}🧹 Cleaning up target filesystem...${RESET}"
+            python3 -m mpremote connect "$PORT" fs rm :setup_webrepl.py
+            
+            rm -f setup_webrepl.py
+            
+            echo -e "${GREEN}✅ WebREPL configured successfully with password: ${YELLOW}${WR_PASS}${RESET}"
+            
+            reboot_board
+            
+            echo ""
+            echo -e "${GREEN}🎉 Your screen is ready for remote updates! Once it connects to your WiFi,${RESET}"
+            echo -e "   you can update it completely wire-free using option 3 of this installer! 🚀"
+        else
+            rm -f setup_webrepl.py
+            echo -e "${RED}❌ Failed to configure WebREPL on board. Check USB connection.${RESET}"
+        fi
+        ;;
+
+    5)
+        # ==========================================
         # ERASE BOARD ONLY
         # ==========================================
         echo ""
@@ -361,7 +451,7 @@ case $CHOICE in
         fi
         ;;
         
-    4)
+    6)
         # ==========================================
         # REBOOT ONLY
         # ==========================================

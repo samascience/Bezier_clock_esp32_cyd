@@ -18,8 +18,8 @@ TZ_LOCAL_NAME = "CDT"
 TZ_LOCAL_OFFSET = -5.0
 TZ_FOREIGN_NAME = "IST"
 TZ_FOREIGN_OFFSET = 5.5
-WIFI_SSID = "ABCD"
-WIFI_PASSWORD = "ABCD123"
+WIFI_SSID = "Antharjalam"
+WIFI_PASSWORD = "Superman$9"
 # === CONFIG_END ===
 
 # Colors (16-bit RGB565)
@@ -430,15 +430,12 @@ def sync_time_from_ntp():
             ntptime.timeout = 5
             ntptime.settime()
             print("NTP Sync successful! RTC set to UTC.")
-            wlan.disconnect()
-            wlan.active(False)
             return True
         except Exception as e:
             print("NTP sync failed:", e)
     else:
         print("WiFi connection timeout.")
         
-    wlan.active(False)
     return False
 
 # ==========================================
@@ -448,9 +445,52 @@ def sync_time_from_ntp():
 def run():
     print("Initializing ESP32 CYD Bezier Morphing Clock...")
     
-    # 1. Sync Time from NTP on Boot (if WiFi configured)
-    sync_time_from_ntp()
+    # Draw a premium boot status screen
+    display.clear(COLOR_BG_DIS)
+    # Drawing elegant glowing title
+    display.draw_text8x8(20, 50, "BEZIER MORPHING CLOCK", COLOR_HOUR_FB, COLOR_BG_DIS)
+    display.draw_text8x8(20, 70, "Powered by Antigravity AI", COLOR_SEC_FB, COLOR_BG_DIS)
     
+    if WIFI_SSID and WIFI_SSID != "your_wifi_ssid":
+        display.draw_text8x8(20, 110, "WiFi: Connecting...", COLOR_MIN_FB, COLOR_BG_DIS)
+        display.draw_text8x8(20, 130, "SSID: " + WIFI_SSID, COLOR_SEC_FB, COLOR_BG_DIS)
+        
+        import network
+        wlan = network.WLAN(network.STA_IF)
+        wlan.active(True)
+        wlan.connect(WIFI_SSID, WIFI_PASSWORD)
+        
+        connected = False
+        for _ in range(20):
+            if wlan.isconnected():
+                connected = True
+                break
+            time.sleep_ms(500)
+            
+        if connected:
+            ip_addr = wlan.ifconfig()[0]
+            display.draw_text8x8(20, 110, "WiFi: Connected!      ", COLOR_IST_GREEN_FB, COLOR_BG_DIS)
+            display.draw_text8x8(20, 150, "IP: " + ip_addr, COLOR_MIN_FB, COLOR_BG_DIS)
+            print("WiFi connected! IP:", ip_addr)
+            
+            display.draw_text8x8(20, 180, "NTP: Syncing time...", COLOR_MIN_FB, COLOR_BG_DIS)
+            try:
+                import ntptime
+                ntptime.timeout = 5
+                ntptime.settime()
+                display.draw_text8x8(20, 180, "NTP: Sync Success!   ", COLOR_IST_GREEN_FB, COLOR_BG_DIS)
+            except Exception as e:
+                print("NTP failed:", e)
+                display.draw_text8x8(20, 180, "NTP: Sync Failed     ", COLOR_HOUR_FB, COLOR_BG_DIS)
+        else:
+            display.draw_text8x8(20, 110, "WiFi: Timeout!       ", COLOR_HOUR_FB, COLOR_BG_DIS)
+            display.draw_text8x8(20, 150, "Running Offline mode", COLOR_SEC_FB, COLOR_BG_DIS)
+        
+        time.sleep(2.5) # Allow user to read the IP address comfortably!
+    else:
+        display.draw_text8x8(20, 110, "WiFi: Not configured", COLOR_HOUR_FB, COLOR_BG_DIS)
+        time.sleep(1.5)
+        
     # Draw screen background and initial static elements once
     display.clear(COLOR_BG_DIS)
     draw_colon(display, COLOR_COLON_DIS)
@@ -535,6 +575,19 @@ def run():
             if (h1 != curr_h1) or (h2 != curr_h2) or (m1 != curr_m1) or (m2 != curr_m2):
                 print("Time updated: {:02d}:{:02d} - Morphing...".format(hour, minute))
                 
+                # Instantly draw seconds "00" on the screen before morphing hours/minutes
+                # so the seconds digits don't look frozen on "59" during the animation!
+                if curr_h1 != -1:  # Only if it's not the very first boot render
+                    render_digit(fbuf_sec, DIGITS[0], s_color, COLOR_BG_FB, 30, 54)
+                    display.draw_sprite(fbuf_sec_bytes, 87, 260, 30, 54)
+                    render_digit(fbuf_sec, DIGITS[0], s_color, COLOR_BG_FB, 30, 54)
+                    display.draw_sprite(fbuf_sec_bytes, 123, 260, 30, 54)
+                    
+                    # Also update colon and last_second state
+                    draw_colon(display, COLOR_COLON_DIS)
+                    last_second = 0
+                    colon_state = True
+                
                 # Sourcing coordinate frames (prevent out-of-bounds on start)
                 h1_s = DIGITS[h1] if curr_h1 == -1 else DIGITS[curr_h1]
                 h2_s = DIGITS[h2] if curr_h2 == -1 else DIGITS[curr_h2]
@@ -558,34 +611,42 @@ def run():
                 s2_curr = last_second % 10 if last_second != -1 else second % 10
                 s1_targ = second // 10
                 s2_targ = second % 10
-                
+
                 last_second = second
                 colon_state = not colon_state
                 # Redraw colon (warm white when active, midnight blue background when inactive)
                 c_color = COLOR_COLON_DIS if colon_state else COLOR_BG_DIS
                 draw_colon(display, c_color)
-                
-                # Morph seconds digits over 8 frames (~100ms duration)
-                s1_s = DIGITS[s1_curr]
-                s2_s = DIGITS[s2_curr]
-                s1_e = DIGITS[s1_targ]
-                s2_e = DIGITS[s2_targ]
-                
-                for frame in range(8 + 1):
-                    p = frame / 8.0
-                    ease_p = 1.0 - math.pow(1.0 - p, 3)  # Cubic ease-out
-                    
-                    # Draw Second 1 (X=87, Y=260, size 30x54) - Centered at the bottom
-                    pts_s1 = interpolate_points(s1_s, s1_e, ease_p)
-                    render_digit(fbuf_sec, pts_s1, s_color, COLOR_BG_FB, 30, 54)
+
+                # If rolling over to a new minute (second == 0), skip the seconds animation
+                # because the minute morph already provides a smooth transition.
+                if second == 0:
+                    # Directly render 00 seconds without animation
+                    render_digit(fbuf_sec, DIGITS[0], s_color, COLOR_BG_FB, 30, 54)
                     display.draw_sprite(fbuf_sec_bytes, 87, 260, 30, 54)
-                    
-                    # Draw Second 2 (X=123, Y=260, size 30x54) - Centered at the bottom
-                    pts_s2 = interpolate_points(s2_s, s2_e, ease_p)
-                    render_digit(fbuf_sec, pts_s2, s_color, COLOR_BG_FB, 30, 54)
+                    render_digit(fbuf_sec, DIGITS[0], s_color, COLOR_BG_FB, 30, 54)
                     display.draw_sprite(fbuf_sec_bytes, 123, 260, 30, 54)
-                    
-                    time.sleep_ms(10)
+                else:
+                    s1_s = DIGITS[s1_curr]
+                    s2_s = DIGITS[s2_curr]
+                    s1_e = DIGITS[s1_targ]
+                    s2_e = DIGITS[s2_targ]
+
+                    for frame in range(8 + 1):
+                        p = frame / 8.0
+                        ease_p = 1.0 - math.pow(1.0 - p, 3)  # Cubic ease-out
+
+                        # Draw Second 1 (X=87, Y=260, size 30x54) - Centered at the bottom
+                        pts_s1 = interpolate_points(s1_s, s1_e, ease_p)
+                        render_digit(fbuf_sec, pts_s1, s_color, COLOR_BG_FB, 30, 54)
+                        display.draw_sprite(fbuf_sec_bytes, 87, 260, 30, 54)
+
+                        # Draw Second 2 (X=123, Y=260, size 30x54) - Centered at the bottom
+                        pts_s2 = interpolate_points(s2_s, s2_e, ease_p)
+                        render_digit(fbuf_sec, pts_s2, s_color, COLOR_BG_FB, 30, 54)
+                        display.draw_sprite(fbuf_sec_bytes, 123, 260, 30, 54)
+
+                        time.sleep_ms(10)
             
             # 5. Standard Background Ambient Effects (Breathing LED & Auto-Brightness)
             # Breathing is driven by a sine wave over the current second
